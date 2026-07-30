@@ -27,29 +27,62 @@ def _deck_key(cards: list) -> frozenset:
 
 
 
-def collect_live_battles(seed_clan_tag: str = "#QLCYCPPC", delay_seconds: float = 0.5) -> list:
+def collect_live_battles(
+    seed_clan_tag: str = "#QLCYCPPC",
+    max_players: int = 300,
+    max_rounds: int = 4,
+    delay_seconds: float = 0.3,
+) -> list:
     """
-    Fetch battle logs from a clan's members, live. Clan-members is a
-    reliable seed source since the player-rankings endpoint has proven
-    unreliable (empty results even on valid requests).
+    Fetch battle logs starting from a clan's members, then snowball
+    outward: every opponent tag seen in a battle becomes a new player
+    to query in the next round. Stops when either max_players is
+    reached or max_rounds completes, whichever comes first.
     """
-    members = get_clan_members(seed_clan_tag)
+    seen_tags = set()
+    to_query = [m["tag"] for m in get_clan_members(seed_clan_tag)]
     all_battles = []
 
-    for i, member in enumerate(members):
-        tag = member["tag"]
-        try:
-            battles = get_battlelog(tag)
-            all_battles.extend(battles)
-        except Exception as e:
-            print(f"  Skipped {tag}: {e}")
+    for round_num in range(1, max_rounds + 1):
+        if not to_query or len(seen_tags) >= max_players:
+            break
 
-        time.sleep(delay_seconds)
+        print(f"\nRound {round_num}: querying {len(to_query)} players "
+              f"({len(seen_tags)} seen so far)...")
 
-        if (i + 1) % 10 == 0:
-            print(f"  Fetched {i + 1}/{len(members)} members...")
+        next_round_tags = set()
 
+        for tag in to_query:
+            if tag in seen_tags or len(seen_tags) >= max_players:
+                continue
+            seen_tags.add(tag)
+
+            try:
+                battles = get_battlelog(tag)
+                all_battles.extend(battles)
+
+                # Pull opponent tags out of this player's battles for
+                # the next round.
+                for battle in battles:
+                    for opp in battle.get("opponent", []):
+                        opp_tag = opp.get("tag")
+                        if opp_tag and opp_tag not in seen_tags:
+                            next_round_tags.add(opp_tag)
+
+            except Exception as e:
+                print(f"  Skipped {tag}: {e}")
+
+            time.sleep(delay_seconds)
+
+            if len(seen_tags) % 25 == 0:
+                print(f"  ...{len(seen_tags)} players queried so far")
+
+        to_query = list(next_round_tags)
+
+    print(f"\nDone. Queried {len(seen_tags)} unique players across "
+          f"{round_num} round(s), collected {len(all_battles)} battles.")
     return all_battles
+
 
 def compute_deck_winrates(battles: list, min_games: int = 3) -> list:
     """
@@ -101,9 +134,8 @@ def print_meta_report(deck_stats: list, top_n: int = 10):
 
 
 if __name__ == "__main__":
-    print("Fetching live battle data from clan members...")
-    battles = collect_live_battles()
-    print(f"\nCollected {len(battles)} battle entries.")
+    print("Fetching live battle data via clan seed + opponent snowballing...")
+    battles = collect_live_battles(max_players=300, max_rounds=4)
 
-    deck_stats = compute_deck_winrates(battles, min_games=2)
+    deck_stats = compute_deck_winrates(battles, min_games=8)
     print_meta_report(deck_stats, top_n=10)

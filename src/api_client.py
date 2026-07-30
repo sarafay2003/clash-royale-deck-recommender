@@ -36,6 +36,33 @@ def get_battlelog(tag: str) -> list:
     resp.raise_for_status()
     return resp.json()
 
+def get_top_ladder_players(limit: int = 30) -> list:
+    url = f"{BASE_URL}/locations/57000178/rankings/players"
+    resp = requests.get(url, headers=_headers(), params={"limit": limit})
+    print("Status:", resp.status_code)
+    print("Response:", resp.text[:500])
+    resp.raise_for_status()
+    return resp.json().get("items", [])
+
+def get_clan_members(clan_tag: str) -> list:
+    """
+    Fetch member list of a clan. Returns list of dicts with at least
+    'tag' and 'name'. Clan tags need the same # -> %23 encoding as
+    player tags.
+    """
+    url = f"{BASE_URL}/clans/{_tag_encoded(clan_tag)}/members"
+    resp = requests.get(url, headers=_headers())
+    resp.raise_for_status()
+    return resp.json().get("items", [])
+
+
+# def get_locations() -> list:
+#     """List all valid location IDs (needed for rankings endpoints)."""
+#     url = f"{BASE_URL}/locations"
+#     resp = requests.get(url, headers=_headers())
+#     resp.raise_for_status()
+#     return resp.json().get("items", [])
+
 
 # if __name__ == "__main__":
 #     sample_tag = "#YUP02GRQG" # replace with a real tag to test
@@ -76,3 +103,14 @@ if __name__ == "__main__":
 
     battles = get_battlelog(sample_tag)
     print_battlelog_summary(battles, sample_tag)
+
+
+# if __name__ == "__main__":
+#     locations = get_locations()
+#     for loc in locations:
+#         print(loc["id"], loc["name"])
+
+# if __name__ == "__main__":
+#     members = get_clan_members("#QLCYCPPC")
+#     for m in members:
+#         print(m["tag"], m["name"])

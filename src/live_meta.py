@@ -84,12 +84,56 @@ def collect_live_battles(
     return all_battles
 
 
-def compute_deck_winrates(battles: list, min_games: int = 8, min_unique_players: int = 4) -> list:
+# def compute_deck_winrates(battles: list, min_games: int = 8, min_unique_players: int = 4) -> list:
+#     """
+#     Given a flat list of battles, compute win rate per exact deck.
+#     Requires both a minimum game count AND a minimum number of unique
+#     players using that deck - otherwise a single skilled player's
+#     win streak can masquerade as a "strong deck".
+#     """
+#     stats = defaultdict(lambda: {"wins": 0, "losses": 0, "players": set()})
+#
+#     for battle in battles:
+#         for player in battle.get("team", []):
+#             trophy_change = player.get("trophyChange")
+#             if trophy_change is None:
+#                 continue
+#
+#             deck = _deck_key(player["cards"])
+#             stats[deck]["players"].add(player["tag"])
+#             if trophy_change > 0:
+#                 stats[deck]["wins"] += 1
+#             else:
+#                 stats[deck]["losses"] += 1
+#
+#     results = []
+#     for deck, record in stats.items():
+#         total = record["wins"] + record["losses"]
+#         unique_players = len(record["players"])
+#         if total < min_games or unique_players < min_unique_players:
+#             continue
+#         win_rate = record["wins"] / total
+#         results.append({
+#             "deck": sorted(deck),
+#             "games": total,
+#             "wins": record["wins"],
+#             "losses": record["losses"],
+#             "unique_players": unique_players,
+#             "win_rate": round(win_rate * 100, 1),
+#         })
+#
+#     results.sort(key=lambda r: r["win_rate"], reverse=True)
+#     return results
+
+
+from src.archetypes import get_archetype
+
+def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_players: int = 4) -> list:
     """
-    Given a flat list of battles, compute win rate per exact deck.
-    Requires both a minimum game count AND a minimum number of unique
-    players using that deck - otherwise a single skilled player's
-    win streak can masquerade as a "strong deck".
+    Same idea as compute_deck_winrates, but groups by archetype
+    (win condition) instead of exact 8-card match - much more
+    data-dense, so real coverage is possible even with a few
+    hundred players.
     """
     stats = defaultdict(lambda: {"wins": 0, "losses": 0, "players": set()})
 
@@ -99,22 +143,22 @@ def compute_deck_winrates(battles: list, min_games: int = 8, min_unique_players:
             if trophy_change is None:
                 continue
 
-            deck = _deck_key(player["cards"])
-            stats[deck]["players"].add(player["tag"])
+            archetype = get_archetype(player["cards"])
+            stats[archetype]["players"].add(player["tag"])
             if trophy_change > 0:
-                stats[deck]["wins"] += 1
+                stats[archetype]["wins"] += 1
             else:
-                stats[deck]["losses"] += 1
+                stats[archetype]["losses"] += 1
 
     results = []
-    for deck, record in stats.items():
+    for archetype, record in stats.items():
         total = record["wins"] + record["losses"]
         unique_players = len(record["players"])
         if total < min_games or unique_players < min_unique_players:
             continue
         win_rate = record["wins"] / total
         results.append({
-            "deck": sorted(deck),
+            "archetype": archetype,
             "games": total,
             "wins": record["wins"],
             "losses": record["losses"],
@@ -124,6 +168,16 @@ def compute_deck_winrates(battles: list, min_games: int = 8, min_unique_players:
 
     results.sort(key=lambda r: r["win_rate"], reverse=True)
     return results
+
+
+def print_archetype_report(archetype_stats: list, top_n: int = 15):
+    print(f"\nTop {top_n} archetypes by live win rate:\n")
+    for i, entry in enumerate(archetype_stats[:top_n], start=1):
+        print(f"{i}. {entry['archetype']} — {entry['win_rate']}% win rate "
+              f"({entry['wins']}W-{entry['losses']}L, {entry['games']} games, "
+              f"{entry['unique_players']} unique players)")
+
+
 
 def print_meta_report(deck_stats: list, top_n: int = 10):
     print(f"\nTop {top_n} decks by live win rate (min games + min unique players applied):\n")
@@ -139,5 +193,5 @@ if __name__ == "__main__":
     print("Fetching live battle data via clan seed + opponent snowballing...")
     battles = collect_live_battles(max_players=300, max_rounds=4)
 
-    deck_stats = compute_deck_winrates(battles, min_games=8)
-    print_meta_report(deck_stats, top_n=10)
+    archetype_stats = compute_archetype_winrates(battles, min_games=10, min_unique_players=4)
+    print_archetype_report(archetype_stats, top_n=15)

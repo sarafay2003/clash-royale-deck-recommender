@@ -122,29 +122,12 @@ def print_archetype_report(archetype_stats: list, top_n: int = 15):
               f"{entry['unique_players']} unique players)")
 
 
-if __name__ == "__main__":
-    my_tag = "#YUP02GRQG"
-
-    print("Fetching live meta data...")
-    battles = collect_live_battles(max_players=300, max_rounds=4)
-    meta_stats = compute_archetype_winrates(battles, min_games=10, min_unique_players=4)
-    print_archetype_report(meta_stats, top_n=15)
-
-    print(f"\nFetching your personal battle history ({my_tag})...")
-    personal_stats = compute_personal_archetype_stats(my_tag)
-    print("DEBUG personal_stats:", personal_stats)
-
-    blended = blend_scores(personal_stats, meta_stats)
-    print_recommendations(blended, top_n=5)
-
-
-
 # if __name__ == "__main__":
 #     my_tag = "#YUP02GRQG"
 #
 #     print("Fetching live meta data...")
-#     battles = collect_live_battles(max_players=60, max_rounds=2, delay_seconds=0.1)
-#     meta_stats = compute_archetype_winrates(battles, min_games=5, min_unique_players=2)
+#     battles = collect_live_battles(max_players=300, max_rounds=4)
+#     meta_stats = compute_archetype_winrates(battles, min_games=10, min_unique_players=4)
 #     print_archetype_report(meta_stats, top_n=15)
 #
 #     print(f"\nFetching your personal battle history ({my_tag})...")
@@ -153,3 +136,20 @@ if __name__ == "__main__":
 #
 #     blended = blend_scores(personal_stats, meta_stats)
 #     print_recommendations(blended, top_n=5)
+
+
+##Shorter version for less loading time in testing
+if __name__ == "__main__":
+    my_tag = "#YUP02GRQG"
+
+    print("Fetching live meta data...")
+    battles = collect_live_battles(max_players=60, max_rounds=2, delay_seconds=0.1)
+    meta_stats = compute_archetype_winrates(battles, min_games=5, min_unique_players=2)
+    print_archetype_report(meta_stats, top_n=15)
+
+    print(f"\nFetching your personal battle history ({my_tag})...")
+    personal_stats = compute_personal_archetype_stats(my_tag)
+    print("DEBUG personal_stats:", personal_stats)
+
+    blended = blend_scores(personal_stats, meta_stats)
+    print_recommendations(blended, top_n=5)

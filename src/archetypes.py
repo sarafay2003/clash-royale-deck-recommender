@@ -15,17 +15,14 @@ WIN_CONDITIONS = {
 }
 
 
-def get_archetype(cards: list) -> str:
+def get_archetypes(cards: list) -> list:
     """
-    Given a deck's card list, return an archetype label based on which
-    win condition(s) it contains. If multiple win conditions are found,
-    join them (e.g. "Golem + Lava Hound"). If none are found, label it
-    "Other" - some decks are pure spell-bait/control without a single
-    clear win condition, or use one we haven't listed.
+    Given a deck's card list, return ALL individual win conditions
+    found (as a list), rather than one combined label. A deck with two
+    win conditions contributes to both archetype buckets - e.g. a
+    Goblin Barrel + Wall Breakers deck counts toward both "Goblin
+    Barrel" stats and "Wall Breakers" stats.
     """
     names = {c["name"] for c in cards}
     found = sorted(names & WIN_CONDITIONS)
-    if not found:
-        return "Other"
-    return " + ".join(found)
-
+    return found if found else ["Other"]

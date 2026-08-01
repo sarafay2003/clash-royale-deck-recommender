@@ -2,29 +2,18 @@
 Live meta aggregator.
 
 Instead of relying on a saved dataset, this fetches fresh data from the
-Clash Royale API every time it's called: pulls a sample of top ladder
-players, grabs their most recent battles (the API only ever returns each
-player's last ~25 anyway, so this is always recent by nature), and
-computes win rates per deck from that fresh sample.
+Clash Royale API every time it's called: pulls a sample of players
+starting from a clan seed, snowballs outward through opponents, and
+computes win rates per archetype from that fresh sample.
 
 Nothing here is saved to disk - it's meant to be called on-demand.
 """
 import time
 from collections import defaultdict
+
 from src.api_client import get_clan_members, get_battlelog
-
-
-from src.api_client import get_top_ladder_players, get_battlelog
-
-
-def _deck_key(cards: list) -> frozenset:
-    """
-    Turn a list of card dicts into a hashable, order-independent key
-    so the same 8 cards always produce the same key regardless of the
-    order they were played in.
-    """
-    return frozenset(c["name"] for c in cards)
-
+from src.archetypes import get_archetypes
+from src.personal import compute_personal_archetype_stats, blend_scores, print_recommendations
 
 
 def collect_live_battles(
@@ -42,6 +31,7 @@ def collect_live_battles(
     seen_tags = set()
     to_query = [m["tag"] for m in get_clan_members(seed_clan_tag)]
     all_battles = []
+    round_num = 0
 
     for round_num in range(1, max_rounds + 1):
         if not to_query or len(seen_tags) >= max_players:
@@ -61,8 +51,6 @@ def collect_live_battles(
                 battles = get_battlelog(tag)
                 all_battles.extend(battles)
 
-                # Pull opponent tags out of this player's battles for
-                # the next round.
                 for battle in battles:
                     for opp in battle.get("opponent", []):
                         opp_tag = opp.get("tag")
@@ -84,56 +72,12 @@ def collect_live_battles(
     return all_battles
 
 
-# def compute_deck_winrates(battles: list, min_games: int = 8, min_unique_players: int = 4) -> list:
-#     """
-#     Given a flat list of battles, compute win rate per exact deck.
-#     Requires both a minimum game count AND a minimum number of unique
-#     players using that deck - otherwise a single skilled player's
-#     win streak can masquerade as a "strong deck".
-#     """
-#     stats = defaultdict(lambda: {"wins": 0, "losses": 0, "players": set()})
-#
-#     for battle in battles:
-#         for player in battle.get("team", []):
-#             trophy_change = player.get("trophyChange")
-#             if trophy_change is None:
-#                 continue
-#
-#             deck = _deck_key(player["cards"])
-#             stats[deck]["players"].add(player["tag"])
-#             if trophy_change > 0:
-#                 stats[deck]["wins"] += 1
-#             else:
-#                 stats[deck]["losses"] += 1
-#
-#     results = []
-#     for deck, record in stats.items():
-#         total = record["wins"] + record["losses"]
-#         unique_players = len(record["players"])
-#         if total < min_games or unique_players < min_unique_players:
-#             continue
-#         win_rate = record["wins"] / total
-#         results.append({
-#             "deck": sorted(deck),
-#             "games": total,
-#             "wins": record["wins"],
-#             "losses": record["losses"],
-#             "unique_players": unique_players,
-#             "win_rate": round(win_rate * 100, 1),
-#         })
-#
-#     results.sort(key=lambda r: r["win_rate"], reverse=True)
-#     return results
-
-
-from src.archetypes import get_archetype
-
 def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_players: int = 4) -> list:
     """
-    Same idea as compute_deck_winrates, but groups by archetype
-    (win condition) instead of exact 8-card match - much more
-    data-dense, so real coverage is possible even with a few
-    hundred players.
+    Groups battles by archetype (win condition) instead of exact deck -
+    much more data-dense, so real coverage is possible even with a few
+    hundred players. A deck with multiple win conditions contributes to
+    each archetype it contains.
     """
     stats = defaultdict(lambda: {"wins": 0, "losses": 0, "players": set()})
 
@@ -143,12 +87,12 @@ def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_pl
             if trophy_change is None:
                 continue
 
-            archetype = get_archetype(player["cards"])
-            stats[archetype]["players"].add(player["tag"])
-            if trophy_change > 0:
-                stats[archetype]["wins"] += 1
-            else:
-                stats[archetype]["losses"] += 1
+            for archetype in get_archetypes(player["cards"]):
+                stats[archetype]["players"].add(player["tag"])
+                if trophy_change > 0:
+                    stats[archetype]["wins"] += 1
+                else:
+                    stats[archetype]["losses"] += 1
 
     results = []
     for archetype, record in stats.items():
@@ -178,20 +122,34 @@ def print_archetype_report(archetype_stats: list, top_n: int = 15):
               f"{entry['unique_players']} unique players)")
 
 
-
-def print_meta_report(deck_stats: list, top_n: int = 10):
-    print(f"\nTop {top_n} decks by live win rate (min games + min unique players applied):\n")
-    for i, entry in enumerate(deck_stats[:top_n], start=1):
-        deck_str = ", ".join(entry["deck"])
-        print(f"{i}. {entry['win_rate']}% win rate "
-              f"({entry['wins']}W-{entry['losses']}L, {entry['games']} games, "
-              f"{entry['unique_players']} unique players)")
-        print(f"   {deck_str}\n")
-
-
 if __name__ == "__main__":
-    print("Fetching live battle data via clan seed + opponent snowballing...")
-    battles = collect_live_battles(max_players=300, max_rounds=4)
+    my_tag = "#YUP02GRQG"
 
-    archetype_stats = compute_archetype_winrates(battles, min_games=10, min_unique_players=4)
-    print_archetype_report(archetype_stats, top_n=15)
+    print("Fetching live meta data...")
+    battles = collect_live_battles(max_players=300, max_rounds=4)
+    meta_stats = compute_archetype_winrates(battles, min_games=10, min_unique_players=4)
+    print_archetype_report(meta_stats, top_n=15)
+
+    print(f"\nFetching your personal battle history ({my_tag})...")
+    personal_stats = compute_personal_archetype_stats(my_tag)
+    print("DEBUG personal_stats:", personal_stats)
+
+    blended = blend_scores(personal_stats, meta_stats)
+    print_recommendations(blended, top_n=5)
+
+
+
+# if __name__ == "__main__":
+#     my_tag = "#YUP02GRQG"
+#
+#     print("Fetching live meta data...")
+#     battles = collect_live_battles(max_players=60, max_rounds=2, delay_seconds=0.1)
+#     meta_stats = compute_archetype_winrates(battles, min_games=5, min_unique_players=2)
+#     print_archetype_report(meta_stats, top_n=15)
+#
+#     print(f"\nFetching your personal battle history ({my_tag})...")
+#     personal_stats = compute_personal_archetype_stats(my_tag)
+#     print("DEBUG personal_stats:", personal_stats)
+#
+#     blended = blend_scores(personal_stats, meta_stats)
+#     print_recommendations(blended, top_n=5)

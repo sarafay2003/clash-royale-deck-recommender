@@ -8,8 +8,17 @@ from fastapi import FastAPI, HTTPException
 
 from src.live_meta import collect_live_battles, compute_archetype_winrates
 from src.personal import compute_personal_archetype_stats, blend_scores
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 
 app = FastAPI(title="Clash Royale Deck Recommender")
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/app")
+def serve_frontend():
+    return FileResponse("static/index.html")
 
 # Cache the meta result in memory so we don't re-fetch 300 players on
 # every single request - refreshed only when explicitly requested.

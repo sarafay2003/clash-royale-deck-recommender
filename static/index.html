@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Clash Royale Deck Recommender</title>
+    <style>
+        body {
+            font-family: -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 60px auto;
+            padding: 0 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #f4c542; }
+        input {
+            width: 70%;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background: #f4c542;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        button:disabled {
+            background: #7a6a30;
+            cursor: not-allowed;
+        }
+        #cancelBtn {
+            background: #e74c3c;
+            color: white;
+        }
+        #status { margin-top: 20px; color: #aaa; min-height: 20px; }
+
+        .progress-track {
+            width: 100%;
+            height: 8px;
+            background: #24243e;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+            display: none;
+        }
+        .progress-track.active { display: block; }
+        .progress-bar {
+            width: 30%;
+            height: 100%;
+            background: #f4c542;
+            border-radius: 4px;
+            animation: slide 1.2s ease-in-out infinite;
+        }
+        @keyframes slide {
+            0%   { transform: translateX(-100%); }
+            50%  { transform: translateX(150%); }
+            100% { transform: translateX(-100%); }
+        }
+
+        .rec {
+            background: #24243e;
+            padding: 14px;
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+        .rec .archetype { font-size: 18px; font-weight: bold; color: #f4c542; }
+        .rec .score { color: #7fffd4; }
+        .rec .reason { color: #ccc; font-size: 14px; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <h1>🃏 Deck Recommender</h1>
+    <p>Enter your Clash Royale player tag to get personalized deck recommendations based on your history and the current live meta.</p>
+
+    <input type="text" id="tagInput" placeholder="e.g. YUP02GRQG or #YUP02GRQG">
+    <button id="submitBtn" onclick="getRecommendations()">Recommend</button>
+    <button id="cancelBtn" onclick="cancelRequest()" style="display:none;">Cancel</button>
+
+    <div id="status"></div>
+    <div class="progress-track" id="progressTrack">
+        <div class="progress-bar"></div>
+    </div>
+    <div id="results"></div>
+
+    <script>
+        const statusMessages = [
+            "Fetching top players from the seed clan...",
+            "Snowballing through opponent battle histories...",
+            "Collecting live match data (this is the slow part)...",
+            "Grouping decks into archetypes...",
+            "Calculating archetype win rates...",
+            "Fetching your personal battle history...",
+            "Blending your stats with the live meta...",
+            "Almost done, finalizing recommendations...",
+        ];
+
+        let statusInterval = null;
+        let currentController = null;
+
+        function startStatusCycle() {
+            const statusEl = document.getElementById('status');
+            let i = 0;
+            statusEl.textContent = statusMessages[0];
+            statusInterval = setInterval(() => {
+                i = (i + 1) % statusMessages.length;
+                statusEl.textContent = statusMessages[i];
+            }, 4000);
+        }
+
+        function stopStatusCycle() {
+            if (statusInterval) {
+                clearInterval(statusInterval);
+                statusInterval = null;
+            }
+        }
+
+        function setLoadingState(isLoading) {
+            document.getElementById('submitBtn').style.display = isLoading ? 'none' : 'inline-block';
+            document.getElementById('cancelBtn').style.display = isLoading ? 'inline-block' : 'none';
+            document.getElementById('progressTrack').classList.toggle('active', isLoading);
+        }
+
+        function cancelRequest() {
+            if (currentController) {
+                currentController.abort();
+            }
+            stopStatusCycle();
+            setLoadingState(false);
+            document.getElementById('status').textContent = 'Cancelled.';
+        }
+
+        async function getRecommendations() {
+            const tag = document.getElementById('tagInput').value.trim();
+            const statusEl = document.getElementById('status');
+            const resultsEl = document.getElementById('results');
+
+            if (!tag) {
+                statusEl.textContent = 'Please enter a player tag.';
+                return;
+            }
+
+            resultsEl.innerHTML = '';
+            setLoadingState(true);
+            startStatusCycle();
+
+            currentController = new AbortController();
+
+            try {
+                const cleanTag = tag.replace('#', '');
+                const response = await fetch(
+                    `/recommend/${encodeURIComponent(cleanTag)}`,
+                    { signal: currentController.signal }
+                );
+
+                stopStatusCycle();
+                setLoadingState(false);
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    statusEl.textContent = `Error: ${err.detail || 'Something went wrong.'}`;
+                    return;
+                }
+
+                const data = await response.json();
+                statusEl.textContent = `Recommendations for ${data.player_tag}:`;
+
+                data.recommendations.forEach(rec => {
+                    const div = document.createElement('div');
+                    div.className = 'rec';
+                    div.innerHTML = `
+                        <div class="archetype">${rec.archetype}</div>
+                        <div class="score">Score: ${rec.score}%</div>
+                        <div class="reason">${rec.reason}</div>
+                    `;
+                    resultsEl.appendChild(div);
+                });
+            } catch (e) {
+                stopStatusCycle();
+                setLoadingState(false);
+                if (e.name === 'AbortError') {
+                    return;
+                }
+                statusEl.textContent = `Request failed: ${e.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

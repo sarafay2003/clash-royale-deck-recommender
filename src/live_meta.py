@@ -4,7 +4,9 @@ Live meta aggregator.
 Instead of relying on a saved dataset, this fetches fresh data from the
 Clash Royale API every time it's called: pulls a sample of players
 starting from a clan seed, snowballs outward through opponents, and
-computes win rates per archetype from that fresh sample.
+computes win rates per archetype from that fresh sample. Also tracks
+the most common full 8-card decks within each archetype so
+recommendations can show an actual buildable deck.
 
 Nothing here is saved to disk - it's meant to be called on-demand.
 """
@@ -76,10 +78,15 @@ def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_pl
     """
     Groups battles by archetype (win condition) instead of exact deck -
     much more data-dense, so real coverage is possible even with a few
-    hundred players. A deck with multiple win conditions contributes to
-    each archetype it contains.
+    hundred players. Also tracks the most common full 8-card decks
+    within each archetype, including each card's icon URL from the API,
+    so recommendations can show an actual buildable deck with images.
     """
-    stats = defaultdict(lambda: {"wins": 0, "losses": 0, "players": set()})
+    stats = defaultdict(lambda: {
+        "wins": 0, "losses": 0, "players": set(),
+        "deck_counts": defaultdict(int),
+    })
+    card_icons = {}  # card name -> icon URL, built up as we see cards
 
     for battle in battles:
         for player in battle.get("team", []):
@@ -87,8 +94,16 @@ def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_pl
             if trophy_change is None:
                 continue
 
+            for c in player["cards"]:
+                icon = c.get("iconUrls", {}).get("medium")
+                if icon:
+                    card_icons[c["name"]] = icon
+
+            full_deck = tuple(sorted(c["name"] for c in player["cards"]))
+
             for archetype in get_archetypes(player["cards"]):
                 stats[archetype]["players"].add(player["tag"])
+                stats[archetype]["deck_counts"][full_deck] += 1
                 if trophy_change > 0:
                     stats[archetype]["wins"] += 1
                 else:
@@ -101,6 +116,14 @@ def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_pl
         if total < min_games or unique_players < min_unique_players:
             continue
         win_rate = record["wins"] / total
+
+        top_deck, top_deck_count = max(
+            record["deck_counts"].items(), key=lambda kv: kv[1]
+        )
+        example_deck = [
+            {"name": name, "icon": card_icons.get(name)} for name in top_deck
+        ]
+
         results.append({
             "archetype": archetype,
             "games": total,
@@ -108,11 +131,12 @@ def compute_archetype_winrates(battles: list, min_games: int = 10, min_unique_pl
             "losses": record["losses"],
             "unique_players": unique_players,
             "win_rate": round(win_rate * 100, 1),
+            "example_deck": example_deck,
+            "example_deck_count": top_deck_count,
         })
 
     results.sort(key=lambda r: r["win_rate"], reverse=True)
     return results
-
 
 def print_archetype_report(archetype_stats: list, top_n: int = 15):
     print(f"\nTop {top_n} archetypes by live win rate:\n")
@@ -120,25 +144,10 @@ def print_archetype_report(archetype_stats: list, top_n: int = 15):
         print(f"{i}. {entry['archetype']} — {entry['win_rate']}% win rate "
               f"({entry['wins']}W-{entry['losses']}L, {entry['games']} games, "
               f"{entry['unique_players']} unique players)")
+        print(f"   Example deck: {', '.join(entry['example_deck'])} "
+              f"(seen {entry['example_deck_count']}x)")
 
 
-# if __name__ == "__main__":
-#     my_tag = "#YUP02GRQG"
-#
-#     print("Fetching live meta data...")
-#     battles = collect_live_battles(max_players=300, max_rounds=4)
-#     meta_stats = compute_archetype_winrates(battles, min_games=10, min_unique_players=4)
-#     print_archetype_report(meta_stats, top_n=15)
-#
-#     print(f"\nFetching your personal battle history ({my_tag})...")
-#     personal_stats = compute_personal_archetype_stats(my_tag)
-#     print("DEBUG personal_stats:", personal_stats)
-#
-#     blended = blend_scores(personal_stats, meta_stats)
-#     print_recommendations(blended, top_n=5)
-
-
-##Shorter version for less loading time in testing
 if __name__ == "__main__":
     my_tag = "#YUP02GRQG"
 
@@ -149,7 +158,6 @@ if __name__ == "__main__":
 
     print(f"\nFetching your personal battle history ({my_tag})...")
     personal_stats = compute_personal_archetype_stats(my_tag)
-    print("DEBUG personal_stats:", personal_stats)
 
     blended = blend_scores(personal_stats, meta_stats)
     print_recommendations(blended, top_n=5)

@@ -57,7 +57,8 @@ def blend_scores(personal_stats: dict, meta_stats: list, min_personal_games: int
     Uses a simple shrinkage approach: if a player has few games with an
     archetype, their personal win rate is unreliable, so we lean more
     on the meta average. If they have a solid sample, we trust their
-    personal result more.
+    personal result more. Also carries through an example buildable
+    deck for each archetype when available from the meta data.
     """
     meta_lookup = {entry["archetype"]: entry for entry in meta_stats}
     results = []
@@ -88,6 +89,8 @@ def blend_scores(personal_stats: dict, meta_stats: list, min_personal_games: int
             "score": round(blended, 1),
             "personal_games": personal_games,
             "reason": reason,
+            "example_deck": meta["example_deck"] if meta else None,
+            "example_deck_count": meta["example_deck_count"] if meta else None,
         })
 
     results.sort(key=lambda r: r["score"], reverse=True)
@@ -98,4 +101,7 @@ def print_recommendations(blended: list, top_n: int = 5):
     print(f"\nTop {top_n} recommended archetypes for you:\n")
     for i, entry in enumerate(blended[:top_n], start=1):
         print(f"{i}. {entry['archetype']} — score {entry['score']}%")
-        print(f"   ({entry['reason']})\n")
+        print(f"   ({entry['reason']})")
+        if entry.get("example_deck"):
+            print(f"   Example deck: {', '.join(entry['example_deck'])}")
+        print()

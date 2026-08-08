@@ -6,13 +6,19 @@
     <style>
         body {
             font-family: -apple-system, sans-serif;
-            max-width: 600px;
+            max-width: 650px;
             margin: 60px auto;
             padding: 0 20px;
             background: #1a1a2e;
             color: #eee;
         }
         h1 { color: #f4c542; }
+        #playerName {
+            font-size: 20px;
+            color: #7fffd4;
+            margin-top: 4px;
+            display: none;
+        }
         input {
             width: 70%;
             padding: 10px;
@@ -71,10 +77,36 @@
         .rec .archetype { font-size: 18px; font-weight: bold; color: #f4c542; }
         .rec .score { color: #7fffd4; }
         .rec .reason { color: #ccc; font-size: 14px; margin-top: 4px; }
+        .rec .deck-label { color: #f4c542; font-size: 13px; margin-top: 10px; }
+        .card-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .card-row img {
+            width: 48px;
+            height: 58px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        #howToUse {
+            margin-top: 40px;
+            padding: 16px;
+            background: #24243e;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #ccc;
+            display: none;
+        }
+        #howToUse h3 { color: #f4c542; margin-top: 0; }
+        #howToUse ol { padding-left: 20px; }
     </style>
 </head>
 <body>
     <h1>🃏 Deck Recommender</h1>
+    <div id="playerName"></div>
     <p>Enter your Clash Royale player tag to get personalized deck recommendations based on your history and the current live meta.</p>
 
     <input type="text" id="tagInput" placeholder="e.g. YUP02GRQG or #YUP02GRQG">
@@ -86,6 +118,16 @@
         <div class="progress-bar"></div>
     </div>
     <div id="results"></div>
+
+    <div id="howToUse">
+        <h3>How to use these recommendations</h3>
+        <ol>
+            <li>Pick a deck above that fits your card levels — check the "Example deck" cards against what you actually have upgraded.</li>
+            <li>Copy the exact cards shown into a deck slot in Clash Royale.</li>
+            <li>The "Score" reflects both how well this archetype is currently doing across many real players, and — where shown — your own personal win rate with it.</li>
+            <li>Recommendations update over time as the live meta shifts, so it's worth checking back rather than treating this as a permanent answer.</li>
+        </ol>
+    </div>
 
     <script>
         const statusMessages = [
@@ -138,6 +180,8 @@
             const tag = document.getElementById('tagInput').value.trim();
             const statusEl = document.getElementById('status');
             const resultsEl = document.getElementById('results');
+            const playerNameEl = document.getElementById('playerName');
+            const howToUseEl = document.getElementById('howToUse');
 
             if (!tag) {
                 statusEl.textContent = 'Please enter a player tag.';
@@ -145,6 +189,8 @@
             }
 
             resultsEl.innerHTML = '';
+            playerNameEl.style.display = 'none';
+            howToUseEl.style.display = 'none';
             setLoadingState(true);
             startStatusCycle();
 
@@ -168,17 +214,36 @@
 
                 const data = await response.json();
                 statusEl.textContent = `Recommendations for ${data.player_tag}:`;
+                playerNameEl.textContent = `👤 ${data.player_name}`;
+                playerNameEl.style.display = 'block';
 
                 data.recommendations.forEach(rec => {
                     const div = document.createElement('div');
                     div.className = 'rec';
+
+                    let cardsHtml = '';
+                    if (rec.example_deck && rec.example_deck.length) {
+                        const imgs = rec.example_deck.map(c =>
+                            c.icon ? `<img src="${c.icon}" title="${c.name}" alt="${c.name}">` : ''
+                        ).join('');
+                        cardsHtml = `
+                            <div class="deck-label">Example deck (used ${rec.example_deck_count}x recently):</div>
+                            <div class="card-row">${imgs}</div>
+                        `;
+                    }
+
                     div.innerHTML = `
                         <div class="archetype">${rec.archetype}</div>
                         <div class="score">Score: ${rec.score}%</div>
                         <div class="reason">${rec.reason}</div>
+                        ${cardsHtml}
                     `;
                     resultsEl.appendChild(div);
                 });
+
+                if (data.recommendations.length) {
+                    howToUseEl.style.display = 'block';
+                }
             } catch (e) {
                 stopStatusCycle();
                 setLoadingState(false);

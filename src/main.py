@@ -2,25 +2,22 @@
 FastAPI service exposing the deck recommender as an HTTP endpoint.
 
 Run with: uvicorn src.main:app --reload
-Then visit http://127.0.0.1:8000/docs for interactive API docs.
+Then visit http://127.0.0.1:8000/docs for interactive API docs, or
+http://127.0.0.1:8000/app for the frontend.
 """
 from fastapi import FastAPI, HTTPException
-
-from src.live_meta import collect_live_battles, compute_archetype_winrates
-from src.personal import compute_personal_archetype_stats, blend_scores
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from src.live_meta import collect_live_battles, compute_archetype_winrates
+from src.personal import compute_personal_archetype_stats, blend_scores
+from src.api_client import get_player
 
 app = FastAPI(title="Clash Royale Deck Recommender")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/app")
-def serve_frontend():
-    return FileResponse("static/index.html")
-
-# Cache the meta result in memory so we don't re-fetch 300 players on
+# Cache the meta result in memory so we don't re-fetch 150 players on
 # every single request - refreshed only when explicitly requested.
 _meta_cache = {"stats": None}
 
@@ -39,6 +36,11 @@ def root():
     return {"message": "Clash Royale Deck Recommender API - see /docs for usage"}
 
 
+@app.get("/app")
+def serve_frontend():
+    return FileResponse("static/index.html")
+
+
 @app.get("/recommend/{player_tag}")
 def recommend(player_tag: str, refresh_meta: bool = False):
     """
@@ -49,6 +51,7 @@ def recommend(player_tag: str, refresh_meta: bool = False):
     tag = player_tag if player_tag.startswith("#") else f"#{player_tag}"
 
     try:
+        player = get_player(tag)
         personal_stats = compute_personal_archetype_stats(tag)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Could not fetch player data: {e}")
@@ -64,5 +67,6 @@ def recommend(player_tag: str, refresh_meta: bool = False):
 
     return {
         "player_tag": tag,
+        "player_name": player.get("name", "Unknown"),
         "recommendations": blended[:5],
     }

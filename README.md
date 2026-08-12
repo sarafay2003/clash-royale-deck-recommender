@@ -6,8 +6,6 @@ generic "best deck" tier list, it looks at **your own battle history** and
 which archetype you should actually be playing right now — with a plain-English
 reason for each suggestion and an actual buildable example deck with card art.
 
-![Screenshot](docs/screenshot.png)
-
 ## The problem it solves
 
 Players currently decide what deck to use one of two ways: copy whatever a
